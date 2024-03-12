@@ -28,9 +28,9 @@ a) This information from your checks is displayed:
 
 - <b>Name</b>
 - <b>Next within:</b> Time for the next check.
-- <b>Next check:</b> Next check schedule. Time and data is displayed. Today and Tomorrow are coded for easy viewing. 
+- <b>Next check:</b> Next check schedule. Time and date is displayed. Today and Tomorrow are coded for easy viewing. 
 - <b>Elapsed Time:</b> Time elapsed since last check
-- <b>Last check:</b> Last check schedule. Yesterday and Today ared coded for easy viewing.
+- <b>Last check:</b> Last check schedule. Time and date is displayed. Yesterday and Today are coded for easy viewing.
 - <b> # pings:</b> Number of pings
 - <b> Running time:</b> for those jobs with /start function displays the last running time
 
