@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HealthChecks.io dashboard</title>                
+    <style>
+        body {
+            font-family: 'Aptos', 'Helvetica Neue', Arial, sans-serif;
+            margin: 10px;   
+        }
+        h1 {
+            text-align: center;
+            margin-top: 10px;    
+            margin-bottom: 5px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px; 
+        }
+        th, td {
+            border: 1px solid #469b5d;
+            padding: 5px;
+            font-size: 12px;
+            white-space: nowrap;
+        }
+        th {
+            background-color: #308446;  
+            font-weight: bold;
+            color: white;
+            text-align: center;
+        }
+        td:nth-child(1) {
+            text-align: left;
+        }
+        td:nth-child(2), td:nth-child(3), td:nth-child(4), td:nth-child(5), td:nth-child(6), td:nth-child(7) {
+            text-align: center;
+        }
+        pre {
+            background-color: #f4f4f4;
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        .status-up {
+            background-color: #32cd32; 
+            font-weight: bold;
+            font-family: sans-serif;
+            color: white;
+        }
+        .status-down {
+            background-color: red;
+            font-weight: bold;
+            font-family: sans-serif;
+            color: white;
+        }
+        .status-grace {
+            background-color: orange;
+            font-weight: bold;
+            font-family: sans-serif;
+            color: white;
+        }
+        note {
+            margin-top: 20px;
+            font-style: italic;
+            font-size: 14px;
+        }
+
+        label[for="orderSelector"] { 
+        font-size: 12px; 
+        font-weight: bold; 
+        text-align: left;
+        margin-bottom: 4px;
+    }      
+    </style>
+</head>
+<body>
+
+    <h1>HealthChecks.io dashboard</h1>     
+        
+        <div id="currentTime" style="text-align: center; font-size: 28px; color: #686868; font-weight: bold; margin-bottom: 15px; margin-top: 2px;"></div>
+      
+        <label for="orderSelector">Order by:</label>
+        <select id="orderSelector" onchange="fetchDataAndUpdateTable()">
+           <option value="name">Name</option>
+           <option value="next_ping">Next check</option>
+           <option value="last_ping">Last check</option>
+           <option value="n_pings"># Pings</option>
+           <option value="last_duration">Running time</option>
+        </select>
+
+        <button onclick="toggleOrder()">&#9650; &#9660;</button>
+
+      <div id="textInterval" style="font-size: 11px; text-align: left; color: #808080; margin-bottom: 0px; margin-top: 6px;"></div>
+
+    <table id="dataTable">
+        <thead>
+            <tr>
+                <th>NAME</th>
+                <th>NEXT<br>WITHIN:</th>
+                <th>NEXT CHECK</th>
+                <th>ELAPSED<br>TIME:</th>
+                <th>LAST CHECK</th>
+                <th>#<br>PINGS:</th>
+                <th>RUNNING<br>TIME:</th>
+            </tr>
+        </thead>
+        <tbody id="jsonTableBody"></tbody>
+    </table>
+    <note> <b><u>Note:</u></b> If the expected time between checks (check schedule, period) exceeds 300 days, <b>> 300 days</b> is displayed in <b>Next check</b> and <b>Next within</b>.</note>
+
+
+    <script>
+
+        var refresh_interval = 5000;                   // DATA UPDATE INTERVAL IN MILISECONDS. RECOMMENDED NOT LOWER THAN 5000 (5s) //
+        var intervalInSeconds = refresh_interval / 1000;
+
+        var textInterval = document.getElementById('textInterval');
+        
+        function updateIntervalCountdown() {
+            var countdown = intervalInSeconds;
+            textInterval.textContent = 'Data updated within ' + countdown + ' s';
+
+            var countdownInterval = setInterval(function () {
+                countdown--;
+
+                if (countdown <= 0) {
+                    clearInterval(countdownInterval);
+                } else {
+                    textInterval.textContent = 'Data updated within ' + countdown + ' s';
+                }
+            }, 1000);
+        }
+
+        updateIntervalCountdown();  
+
+        var sortOrderAscending = true;  
+
+        function toggleOrder() {
+            sortOrderAscending = !sortOrderAscending;
+            fetchDataAndUpdateTable();
+        }
+
+        function formatDate(dateString) {
+            var options = { 
+                day: '2-digit', 
+                month: '2-digit', 
+                year: '2-digit', 
+                hour: '2-digit', 
+                minute: '2-digit', 
+                second: '2-digit'
+            };
+
+            return new Date(dateString).toLocaleString(undefined, options);
+        }
+
+        function formatTime(Time) {
+            var days = Math.floor(Time / (24 * 3600));
+            var hours = Math.floor((Time % (24 * 3600)) / 3600);
+            var minutes = Math.floor((Time % 3600) / 60);
+            var seconds = Math.floor(Time % 60);
+
+            var formattedTime = '';
+
+            if (days > 0) {
+                formattedTime += days + 'd ';
+            }
+
+            if (hours > 0 || days > 0) {
+                formattedTime += hours + 'h ';
+            }
+
+            if (minutes > 0 || hours > 0 || days > 0) {
+                formattedTime += minutes + 'm ';
+            }
+
+            if (Time < 3600) {
+                formattedTime += seconds + 's';
+            }
+
+            return formattedTime.trim();
+        }
+
+        function fetchDataAndUpdateTable() {
+            var httpRequest = new XMLHttpRequest();
+            var key = "YOUR READ-ONLY API KEY HERE";    // PLACE HERE YOUR healthchecks.io project READ-ONLY API KEY //
+
+            httpRequest.onreadystatechange = function() {
+                if (httpRequest.readyState === 4 && httpRequest.status === 200) {
+                    var jsonData = JSON.parse(httpRequest.responseText);
+                    var tableBody = document.getElementById("jsonTableBody");
+                    tableBody.innerHTML = '';
+
+                    // Obtén la opción seleccionada del selector
+                    var orderSelected = document.getElementById("orderSelector").value;
+
+                   jsonData.checks.sort(function(a, b) {
+                       var comparison = 0;
+
+  			  if (orderSelected === 'name') {
+       				 comparison = a.name.localeCompare(b.name);
+   			  } else if (orderSelected === 'last_ping') {
+       				 comparison = new Date(a.last_ping) - new Date(b.last_ping);
+  			  } else if (orderSelected === 'next_ping') {
+      				  comparison = new Date(a.next_ping) - new Date(b.next_ping);
+   			  } else if (orderSelected === 'n_pings') {
+      			      if (a.n_pings !== undefined && b.n_pings !== undefined) {
+           			 comparison = a.n_pings - b.n_pings;
+       			      } else if (a.n_pings === undefined && b.n_pings !== undefined) {
+                                 comparison = sortOrderAscending ? 1 : -1;
+                          } else if (a.n_pings !== undefined && b.n_pings === undefined) {
+                                 comparison = sortOrderAscending ? -1 : 1;
+                              }
+                          } else if (orderSelected === 'last_duration') {
+                              if (a.last_duration !== undefined && b.last_duration !== undefined) {
+                                 comparison = a.last_duration - b.last_duration;
+                              } else if (a.last_duration === undefined && b.last_duration !== undefined) {
+                                 comparison = sortOrderAscending ? 1 : -1;
+                              } else if (a.last_duration !== undefined && b.last_duration === undefined) {
+                                 comparison = sortOrderAscending ? -1 : 1;
+                              }
+                          }
+
+                     return sortOrderAscending ? comparison : -comparison;
+                   });
+
+                    jsonData.checks.forEach(function(check) {
+                        var row = document.createElement("tr");
+
+                        var nameCell = document.createElement("td");
+                        nameCell.textContent = check.name;
+                        
+                        // Agrega clases según el estado
+                        if (check.status === 'up') {
+                            nameCell.classList.add('status-up');
+                        } else if (check.status === 'down') {
+                            nameCell.classList.add('status-down');
+                        } else if (check.status === 'grace') {
+                            nameCell.classList.add('status-grace');
+                        }
+
+                        row.appendChild(nameCell);
+                        
+                        const options = { hour: '2-digit', minute: '2-digit', second: '2-digit' };
+
+                        var nextCheckCell = document.createElement("td");
+                        var nextPingCell = document.createElement("td");
+
+                        if (check.timeout && check.timeout > 300 * 24 * 3600) {
+                            
+                            nextPingCell.textContent = "> 300 days";
+                            nextCheckCell.textContent = "> 300 days";
+                        } else {
+                            var nextPingDate = new Date(check.next_ping);
+                            var timeUntilNextEvent = (nextPingDate.getTime() - Date.now()) / 1000;
+                            nextPingCell.textContent = formatTime(timeUntilNextEvent);
+                            
+                            
+                            if (nextPingDate.toDateString() === new Date().toDateString()) {
+                                nextCheckCell.textContent = "Today, " + nextPingDate.toLocaleTimeString(undefined, options);
+                            } else if (nextPingDate.toDateString() === new Date(new Date().getTime() + 24 * 3600 * 1000).toDateString()) {
+                                nextCheckCell.textContent = "Tomorrow, " + nextPingDate.toLocaleTimeString(undefined, options);
+                            } else {
+                                nextCheckCell.textContent = formatDate(check.next_ping);
+                            }
+                           
+                            if (check.status === 'down') {
+                               nextCheckCell.textContent = " ";
+                               nextCheckCell.classList.add('status-down');
+                            }
+                           
+                            if (check.status === 'grace') {
+                                nextPingCell.classList.add('status-grace');
+                                nextPingCell.textContent = " ";
+                            }
+                               if (check.status === 'down') {
+                                nextPingCell.classList.add('status-down');
+                                nextPingCell.textContent = "down";
+                            }
+                        }
+
+                        row.appendChild(nextPingCell);
+                        row.appendChild(nextCheckCell);
+
+                     
+                        var elapsedTimeCell = document.createElement("td");
+                        elapsedTimeCell.textContent = check.last_ping ? formatTime((Date.now() - new Date(check.last_ping).getTime()) / 1000) : " ";
+                        row.appendChild(elapsedTimeCell);
+
+           
+                        var lastPingCell = document.createElement("td");
+                        var lastPingDate = check.last_ping ? new Date(check.last_ping) : null;
+
+        
+                        if (lastPingDate) {
+                            if (lastPingDate.toDateString() === new Date().toDateString()) {
+                                lastPingCell.textContent = "Today, " + lastPingDate.toLocaleTimeString(undefined, options);
+                            } else if (lastPingDate.toDateString() === new Date(new Date().getTime() - 24 * 3600 * 1000).toDateString()) {
+                                lastPingCell.textContent = "Yesterday, " + lastPingDate.toLocaleTimeString(undefined, options);
+                            } else {
+                                lastPingCell.textContent = formatDate(check.last_ping);
+                            }
+                        }
+
+                        row.appendChild(lastPingCell);
+                 
+                        var numPingsCell = document.createElement("td");
+                        numPingsCell.textContent = check.n_pings !== undefined ? check.n_pings : " ";
+                        row.appendChild(numPingsCell);
+             
+                        var durationCell = document.createElement("td");
+                        durationCell.textContent = check.last_duration !== undefined ? formatTime(check.last_duration) : "";
+                        row.appendChild(durationCell);
+
+                        tableBody.appendChild(row);
+                    });
+                }
+            };
+
+            httpRequest.open("GET", "https://healthchecks.io/api/v3/checks/");
+            httpRequest.setRequestHeader("X-API-Key", key);
+            httpRequest.send();
+        }
+
+        function showcurrentTime() {
+            var currentTimeElement = document.getElementById("currentTime");
+            var currentTime = new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit'});
+            currentTimeElement.innerHTML = "&#x1f556; " + currentTime;
+        }
+
+
+        showcurrentTime();
+        fetchDataAndUpdateTable();
+
+        setInterval(updateIntervalCountdown, refresh_interval); 
+        setInterval(fetchDataAndUpdateTable, refresh_interval);
+        setInterval(showcurrentTime, 1000);
+
+    </script>
+
+</body>
+</html>
